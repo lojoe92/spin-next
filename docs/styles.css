@@ -155,7 +155,7 @@ code { font: 13px var(--mono); background: var(--sleeve); border: 1px solid var(
 .panel.two { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; }
 .panel.two > div { display: grid; gap: 10px; align-content: start; min-width: 0; }
 .hbars { display: grid; gap: 9px; }
-.hbar { display: grid; grid-template-columns: minmax(64px, 30%) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.hbar { display: grid; grid-template-columns: minmax(64px, 28%) minmax(0, 1fr) 8.6rem; gap: 10px; align-items: center; font-size: 13px; }
 .hbar .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbar .track { height: 12px; background: var(--line); border-radius: 6px; position: relative; }
 .hbar .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 6px; }
