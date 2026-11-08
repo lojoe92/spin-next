@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spin Next</title>
+<meta name="description" content="Picks your next album from the 1001 Albums list, links it on Spotify, and logs your rating and notes to your own Google Sheet.">
+<meta name="theme-color" content="#2b44c7">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- app:start -->
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Spin<span>/</span>Next</h1>
+      <div class="count" id="count">— rated</div>
+    </div>
+    <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-spin" aria-selected="true" data-view="spin">Spin</button>
+    <button role="tab" id="tab-log" aria-selected="false" data-view="log">Log<span class="dot" id="pendingDot" hidden></span></button>
+    <button role="tab" id="tab-stats" aria-selected="false" data-view="stats">Stats</button>
+    <button role="tab" id="tab-settings" aria-selected="false" data-view="settings">Settings</button>
+  </nav>
+
+  <main>
+    <!-- SPIN -->
+    <section id="view-spin">
+      <div id="now" hidden></div>
+
+      <div id="ask" class="ask">
+        <div class="q">
+          <span class="eyebrow">Question 1 of 3</span>
+          <h2>What are you in the mood for?</h2>
+          <div class="chips" id="q-mood"></div>
+        </div>
+        <div class="q" style="margin-top:20px">
+          <span class="eyebrow">Question 2 of 3</span>
+          <h2>Which era do you want to explore?</h2>
+          <div class="chips" id="q-era"></div>
+        </div>
+        <div class="q" style="margin-top:20px">
+          <span class="eyebrow">Question 3 of 3</span>
+          <h2>How much time have you got?</h2>
+          <div class="chips" id="q-time"></div>
+        </div>
+        <div style="display:grid;gap:12px;margin-top:22px">
+          <label class="switch"><input type="checkbox" id="incRemoved"> Include the 13 albums dropped from the 2026 list</label>
+          <button class="btn primary big" id="goPick">Pick an album</button>
+        </div>
+      </div>
+
+      <div id="pick" hidden></div>
+      <div id="recent" class="recent"></div>
+    </section>
+
+    <!-- LOG -->
+    <section id="view-log" hidden>
+      <div class="stats" id="decadeStats" aria-label="Progress by decade"></div>
+      <input class="search" id="search" type="search" placeholder="Search 1,102 albums by artist or title" autocomplete="off">
+      <div id="pendingBox"></div>
+      <div class="list" id="list"></div>
+    </section>
+
+    <!-- STATS -->
+    <section id="view-stats" hidden>
+      <div id="insights" class="insights"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" hidden>
+      <div style="display:grid;gap:6px">
+        <h2 style="font-size:22px">Sync with your sheet</h2>
+        <p class="muted" style="margin:0">Ratings are written to the <b>Rating</b> and <b>Review Date</b> columns of the Ratings Chart tab through a small Google Apps Script you deploy once.</p>
+      </div>
+      <form id="settingsForm" style="display:grid;gap:14px">
+        <div class="field">
+          <label for="sUrl">Web app URL</label>
+          <input id="sUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="sToken">Secret word (TOKEN in the script)</label>
+          <input id="sToken" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="row">
+          <button class="btn primary" type="submit">Save settings</button>
+          <button class="btn" type="button" id="syncNow">Sync now</button>
+        </div>
+        <div id="settingsStatus"></div>
+      </form>
+      <div style="display:grid;gap:8px">
+        <h3 style="font-size:16px">Set-up, once</h3>
+        <ol class="steps">
+          <li>Open <b>1001 Albums.xlsx</b> in Google Sheets and choose <b>File › Save as Google Sheets</b>.</li>
+          <li>In the new sheet, open <b>Extensions › Apps Script</b>, paste <code>apps-script/Code.gs</code> from the project and change <code>TOKEN</code>.</li>
+          <li>Run <code>setup2026</code> once. It adds the 13 new albums and the 2026 Edition column.</li>
+          <li><b>Deploy › New deployment › Web app</b>, execute as <b>Me</b>, access <b>Anyone</b>. Paste the URL above.</li>
+        </ol>
+        <p class="note" id="envNote"></p>
+      </div>
+    </section>
+  </main>
+</div>
+<!-- app:end -->
+<script src="data/albums.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

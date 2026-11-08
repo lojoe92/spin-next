@@ -1,0 +1,14 @@
+# generated
+dist/
+android/app/src/main/assets/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+
+# editors / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
