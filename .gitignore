@@ -12,3 +12,10 @@ android/local.properties
 *.iml
 .vscode/
 .DS_Store
+
+# backend (multi-user mode)
+node_modules/
+server-data/
+*.log
+.env
+ecosystem.config.js

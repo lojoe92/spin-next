@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spin Next — Claim Your Invitation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4efe6; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: #fff; border: 1px solid #e4dccd; border-radius: 10px; padding: 40px 36px; width: 100%; max-width: 440px; box-shadow: 0 4px 24px rgba(0,0,0,0.06); text-align: center; }
+    .crest { font-size: 44px; margin-bottom: 8px; }
+    h1 { font-size: 22px; color: #2a221a; margin-bottom: 4px; font-weight: 700; }
+    .subtitle { color: #8c7b5e; font-size: 13px; margin-bottom: 22px; line-height: 1.5; }
+    .invite-info { background: #faf7f0; border: 1px solid #e4dccd; border-radius: 6px; padding: 14px 18px; margin-bottom: 18px; font-size: 13px; text-align: left; color: #4a3728; }
+    label { display: block; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8c7b5e; margin-bottom: 6px; font-weight: 600; }
+    input { width: 100%; padding: 11px 14px; border: 1px solid #c8b89a; border-radius: 6px; font-size: 15px; font-family: inherit; background: #faf7f0; color: #2a221a; outline: none; }
+    input:focus { border-color: #8c7b5e; }
+    button { width: 100%; padding: 12px; background: #2a221a; color: #fff; border: none; border-radius: 6px; font-size: 15px; font-family: inherit; cursor: pointer; margin-top: 18px; font-weight: 600; }
+    button:hover { background: #3d3324; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .msg { font-size: 13px; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; display: none; text-align: left; }
+    .msg.error { background: #fce8e8; color: #c0392b; border: 1px solid #f0c0c0; }
+    .msg.success { background: #e8f4e8; color: #2a6b2a; border: 1px solid #b8d8b8; }
+    .next-steps { font-size: 13px; color: #4a3728; line-height: 1.55; text-align: left; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="crest">💿</div>
+    <h1>You're Invited!</h1>
+    <p class="subtitle" id="subtitle">Verifying setup link…</p>
+    <div class="msg" id="msg"></div>
+    <div class="invite-info" id="info" style="display:none"></div>
+    <form id="form" style="display:none">
+      <label for="email">Your Email Address</label>
+      <input type="email" id="email" autocomplete="email" required placeholder="you@example.com">
+      <button type="submit" id="btn">Send Setup Email</button>
+      <p style="font-size:12px;color:#8c7b5e;margin-top:14px;line-height:1.5">
+        We'll email you a one-time link to finish setup. The link you got from your inviter deactivates after this step.
+      </p>
+    </form>
+    <div id="success" style="display:none">
+      <div class="msg success" style="display:block">✓ Setup email sent!</div>
+      <div class="next-steps">
+        <p><strong>Next steps:</strong></p>
+        <ol style="margin:8px 0 0 22px">
+          <li>Check your inbox at the address you provided.</li>
+          <li>Click <strong>Accept Invitation</strong> in that email.</li>
+          <li>Pick a username and password — and you're in.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <script>
+    const token = new URLSearchParams(window.location.search).get('token');
+    const subtitle = document.getElementById('subtitle');
+    const info = document.getElementById('info');
+    const msg = document.getElementById('msg');
+    const form = document.getElementById('form');
+    const btn = document.getElementById('btn');
+    const success = document.getElementById('success');
+    function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function showError(t) { msg.className = 'msg error'; msg.textContent = t; msg.style.display = 'block'; }
+
+    (async () => {
+      if (!token) { subtitle.textContent = ''; showError('Missing setup token.'); return; }
+      try {
+        const r = await fetch('/api/open-invitations/verify/' + encodeURIComponent(token));
+        const data = await r.json();
+        if (!r.ok) { subtitle.textContent = ''; showError(data.error || 'This setup link is no longer valid.'); return; }
+        subtitle.textContent = `${esc(data.invited_by)} invited you to Spin Next.`;
+        info.innerHTML = `<div><strong>Role:</strong> ${esc(data.role.charAt(0).toUpperCase()+data.role.slice(1))}</div>
+          <div style="margin-top:8px;font-size:12px;color:#8c7b5e">Enter your email below — we'll send you a personal setup link.</div>`;
+        info.style.display = 'block';
+        form.style.display = 'block';
+      } catch { subtitle.textContent = ''; showError('Network error.'); }
+    })();
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      msg.style.display = 'none';
+      const email = document.getElementById('email').value.trim();
+      btn.disabled = true; btn.textContent = 'Sending…';
+      try {
+        const r = await fetch('/api/open-invitations/claim', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, email }),
+        });
+        const data = await r.json();
+        if (!r.ok) { showError(data.error || 'Failed.'); btn.disabled = false; btn.textContent = 'Send Setup Email'; return; }
+        form.style.display = 'none'; info.style.display = 'none'; subtitle.style.display = 'none';
+        success.style.display = 'block';
+      } catch { showError('Network error.'); btn.disabled = false; btn.textContent = 'Send Setup Email'; }
+    });
+  </script>
+</body>
+</html>

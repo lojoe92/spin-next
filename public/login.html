@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spin Next — Sign In</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4efe6; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: #fff; border: 1px solid #e4dccd; border-radius: 10px; padding: 40px 36px; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,0.06); text-align: center; }
+    .crest { font-size: 44px; margin-bottom: 8px; }
+    h1 { font-size: 22px; color: #2a221a; margin-bottom: 4px; font-weight: 700; }
+    .subtitle { color: #8c7b5e; font-size: 13px; margin-bottom: 28px; }
+    label { display: block; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8c7b5e; margin-bottom: 6px; font-weight: 600; }
+    input { width: 100%; padding: 10px 14px; border: 1px solid #c8b89a; border-radius: 6px; font-size: 15px; font-family: inherit; background: #faf7f0; color: #2a221a; outline: none; transition: border-color 0.15s; }
+    input:focus { border-color: #8c7b5e; }
+    .field { margin-bottom: 16px; }
+    button { width: 100%; padding: 12px; background: #2a221a; color: #fff; border: none; border-radius: 6px; font-size: 15px; font-family: inherit; cursor: pointer; font-weight: 600; margin-top: 8px; transition: background 0.15s; }
+    button:hover { background: #3d3324; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { background: #fce8e8; color: #c0392b; border: 1px solid #f0c0c0; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px; display: none; text-align: left; }
+    .footer-link { text-align: center; margin-top: 18px; font-size: 13px; }
+    .footer-link a { color: #8c7b5e; text-decoration: none; border-bottom: 1px dotted #c8b89a; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="crest">💿</div>
+    <h1>Spin Next</h1>
+    <p class="subtitle">Sign in to your account</p>
+    <div class="error" id="error"></div>
+    <form id="loginForm">
+      <div class="field">
+        <label for="username">Username or Email</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" id="btn">Sign In</button>
+      <p class="footer-link"><a href="/forgot-password.html">Forgot password?</a></p>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn');
+      const err = document.getElementById('error');
+      err.style.display = 'none';
+      btn.textContent = 'Signing in…';
+      btn.disabled = true;
+
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        localStorage.setItem('sn_token', data.token);
+        localStorage.setItem('sn_username', data.username);
+        localStorage.setItem('sn_role', data.role);
+        window.location.href = '/';
+      } else {
+        err.textContent = data.error || 'Sign in failed';
+        err.style.display = 'block';
+        btn.textContent = 'Sign In';
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

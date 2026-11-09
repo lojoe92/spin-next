@@ -1,5 +1,27 @@
 (function () {
   'use strict';
+
+  // ---------- auth gate (added for multi-user backend) ----------
+  const authToken = () => localStorage.getItem('sn_token');
+  // Only enforce auth on the hosted web build (not in the Claude artifact frame or Android wrapper)
+  const _onHostedWeb = !window.SpinNextAndroid && !(window.claude && typeof window.claude.use === 'function');
+  if (_onHostedWeb && !authToken()) {
+    window.location.replace('/login.html');
+    return;
+  }
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(path, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken(), ...(opts.headers || {}) },
+    });
+    if (res.status === 401) {
+      Object.keys(localStorage).filter(k => k.startsWith('sn_')).forEach(k => localStorage.removeItem(k));
+      window.location.replace('/login.html');
+      return null;
+    }
+    return res;
+  }
+
   // ---------- data ----------
   // row: [sheetRow, artist, title, year, genre, minutes, songs, english, edition(-1 removed, 1 added), rating, date]
   const A = ALBUMS.map(r => ({ id: r[0], artist: r[1], title: r[2], year: r[3], genre: r[4], mins: r[5], songs: r[6],
@@ -72,8 +94,15 @@
       else { await dbRef.set(JSON.parse(JSON.stringify(S))); }
     } catch (e) { dbRef = null; }
   }
+  let apiSyncTimer = null;
   function persist() {
     lsSet(S);
+    if (_onHostedWeb) {
+      // Debounced background sync to our Node backend
+      clearTimeout(apiSyncTimer);
+      apiSyncTimer = setTimeout(() => { _syncUpApi().catch(() => {}); }, 500);
+      return;
+    }
     if (!dbRef) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { dbRef.set(JSON.parse(JSON.stringify(S))).catch(() => {}); }, 400);
@@ -97,7 +126,9 @@
   }
   const isRated = a => !!ratingOf(a);
   const pending = () => Object.keys(S.ratings).map(Number).filter(id => S.ratings[id] && !S.ratings[id].s);
-  const configured = () => !!(S.settings.url && S.settings.token);
+  // With the multi-user backend, every signed-in user is "configured" by definition.
+  // The Claude artifact + Android paths still fall back to their original sheet config.
+  const configured = () => _onHostedWeb || !!(S.settings.url && S.settings.token);
 
   function rateUrl(a, r, page) {
     const u = new URL(S.settings.url);
@@ -131,15 +162,70 @@
   }
   const canFetch = () => !inArtifact; // the Claude artifact frame blocks requests to other sites
 
+  // ---------- sync: hosted-web path uses /api/state; legacy paths keep sheet code ----------
+
+  // Hosted-web: pull the whole state blob from the server and merge it in
+  async function _syncDownApi() {
+    const r = await apiFetch('/api/state');
+    if (!r || !r.ok) return 0;
+    const server = await r.json();
+    if (!server || typeof server !== 'object') return 0;
+    const localPending = new Set(pending());
+    let n = 0;
+    if (server.ratings) {
+      for (const [idStr, sr] of Object.entries(server.ratings)) {
+        const id = Number(idStr);
+        if (localPending.has(id)) continue;  // local unsynced edit wins
+        const cur = S.ratings[id];
+        if (!cur || cur.r !== sr.r) n++;
+        S.ratings[id] = { r: sr.r, d: sr.d || '', n: sr.n || '', t: sr.t || '', s: 1 };
+      }
+    }
+    if (Array.isArray(server.skipped)) {
+      S.skipped = Array.from(new Set([...(S.skipped || []), ...server.skipped]));
+    }
+    if (Array.isArray(server.history) && (!S.history || !S.history.length)) {
+      S.history = server.history;
+    }
+    if (server.prefs && typeof server.prefs === 'object') {
+      S.prefs = Object.assign({}, server.prefs, S.prefs || {});
+    }
+    if (server.now !== undefined && !S.now) { S.now = server.now; S.nowSince = server.nowSince; }
+    lsSet(S);
+    return n;
+  }
+
+  // Hosted-web: push the current state blob; mark everything synced on success
+  async function _syncUpApi() {
+    const payload = {
+      ratings: S.ratings, skipped: S.skipped, history: S.history, prefs: S.prefs,
+      now: S.now, nowSince: S.nowSince,
+    };
+    const r = await apiFetch('/api/state', { method: 'PUT', body: JSON.stringify(payload) });
+    if (!r || !r.ok) return 0;
+    let up = 0;
+    for (const id of Object.keys(S.ratings)) {
+      if (S.ratings[id] && !S.ratings[id].s) { S.ratings[id].s = 1; up++; }
+    }
+    if (up) lsSet(S);
+    return up;
+  }
+
   async function pushRating(id) {
+    if (_onHostedWeb) {
+      await _syncUpApi();
+      return true;
+    }
+    // Legacy sheet path (Android bridge / direct Apps Script)
     const a = byId.get(id), r = S.ratings[id];
-    if (!a || !r || !configured() || !canFetch()) return false;
+    if (!a || !r || !canFetch()) return false;
     const txt = await http('POST', S.settings.url, JSON.stringify({ action: 'rate', token: S.settings.token, artist: a.artist, title: a.title, rating: r.r, date: r.d, notes: notesText(r) }));
     const res = JSON.parse(txt);
     if (!res.ok) throw new Error(res.error || 'The sheet refused the rating.');
     r.s = 1; persist(); return true;
   }
   async function pullFromSheet() {
+    if (_onHostedWeb) return _syncDownApi();
     const u = new URL(S.settings.url); u.searchParams.set('token', S.settings.token);
     const res = JSON.parse(await http('GET', u.toString()));
     if (!res.ok) throw new Error(res.error || 'The sheet refused the request.');
@@ -148,7 +234,7 @@
     res.ratings.forEach(x => {
       const a = idx.get(norm(x.artist) + '|' + norm(x.title)); if (!a) return;
       const cur = S.ratings[a.id];
-      if (cur && !cur.s) return; // local change still waiting to upload
+      if (cur && !cur.s) return;
       if (!cur || cur.r !== x.rating) n++;
       const keep = cur && (cur.t || cur.n) && notesText(cur) === (x.notes || '');
       S.ratings[a.id] = { r: x.rating, d: x.date || '', s: 1, t: keep ? cur.t : '', n: keep ? cur.n : (x.notes || '') };
@@ -156,6 +242,11 @@
     persist(); return n;
   }
   async function syncAll() {
+    if (_onHostedWeb) {
+      const down = await _syncDownApi();
+      const up   = await _syncUpApi();
+      return { up, down };
+    }
     if (!configured()) throw new Error('Add the web app URL and secret word first.');
     let up = 0;
     for (const id of pending()) { if (await pushRating(id)) up++; }
@@ -549,6 +640,9 @@
 
   // ---------- settings ----------
   function renderSettings() {
+    // On hosted-web the settings panel has been rewritten (see boot block) and
+    // the Apps Script fields no longer exist — bail out.
+    if (!$('sUrl') || !$('sToken')) return;
     $('sUrl').value = S.settings.url || ''; $('sToken').value = S.settings.token || '';
     $('syncNow').hidden = inArtifact;
     $('envNote').textContent = inArtifact
@@ -558,6 +652,8 @@
   function setStatus(msg, kind) { $('settingsStatus').innerHTML = msg ? '<div class="status ' + (kind || '') + '">' + esc(msg) + '</div>' : ''; }
   $('settingsForm').addEventListener('submit', async e => {
     e.preventDefault();
+    // Hosted-web: the Apps Script URL/token UI has been removed; nothing to save here.
+    if (!$('sUrl') || !$('sToken')) return;
     const url = $('sUrl').value.trim(), token = $('sToken').value.trim();
     if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { setStatus('That doesn’t look like an Apps Script web app URL. It starts with https://script.google.com/macros/s/', 'warn'); return; }
     S.settings = { url, token }; persist(); renderHeader(); renderLog();
@@ -595,7 +691,54 @@
   // ---------- boot ----------
   merge(lsGet());
   render();
+
+  // Hosted-web: re-skin the Settings panel (the Apps Script URL/token fields are
+  // no longer needed — your account owns the data). Add a Sign out button and,
+  // for admins, a link to /admin.html.
+  if (_onHostedWeb) {
+    const sForm = $('settingsForm');
+    if (sForm) {
+      // Replace the entire form content with an account-oriented panel
+      sForm.innerHTML = `
+        <div class="field">
+          <label>Signed in as</label>
+          <div style="padding:10px 0;font-weight:600">${(localStorage.getItem('sn_username') || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</div>
+        </div>
+        <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" id="btnChangePw" class="btn">Change password</button>
+          ${localStorage.getItem('sn_role') === 'admin' ? '<a href="/admin.html" class="btn">Manage users</a>' : ''}
+          <button type="button" id="btnSignOut" class="btn">Sign out</button>
+        </div>
+        <div id="pwChange" hidden style="margin-top:14px;padding:14px;background:rgba(0,0,0,0.03);border-radius:6px">
+          <div class="field"><label>Current password</label><input type="password" id="pwCur" autocomplete="current-password"></div>
+          <div class="field"><label>New password (min 8 chars)</label><input type="password" id="pwNew" autocomplete="new-password"></div>
+          <div class="actions" style="display:flex;gap:10px"><button type="button" id="pwSave" class="btn">Save</button><button type="button" id="pwCancel" class="btn">Cancel</button></div>
+        </div>
+      `;
+      $('btnSignOut').onclick = () => {
+        Object.keys(localStorage).filter(k => k.startsWith('sn_')).forEach(k => localStorage.removeItem(k));
+        try { localStorage.removeItem('spinnext.v1'); } catch {}
+        window.location.replace('/login.html');
+      };
+      $('btnChangePw').onclick = () => { $('pwChange').hidden = false; };
+      $('pwCancel').onclick    = () => { $('pwChange').hidden = true; };
+      $('pwSave').onclick      = async () => {
+        const cur = $('pwCur').value, nw = $('pwNew').value;
+        if (nw.length < 8) { setStatus('Password must be at least 8 characters', 'warn'); return; }
+        const r = await apiFetch('/api/change-password', { method: 'POST', body: JSON.stringify({ currentPassword: cur, newPassword: nw }) });
+        if (!r || !r.ok) { const d = r ? await r.json() : {}; setStatus(d.error || 'Failed', 'warn'); return; }
+        $('pwChange').hidden = true; $('pwCur').value = ''; $('pwNew').value = '';
+        setStatus('Password updated', 'ok');
+      };
+    }
+    const envNote = $('envNote');
+    if (envNote) envNote.textContent = 'Your ratings are stored on your account and sync across any device you sign in from.';
+    const syncBtn = $('syncNow');
+    if (syncBtn) syncBtn.hidden = false;
+  }
+
   if (inArtifact && window.claude && typeof window.claude.use === 'function') connectDb();
+  else if (_onHostedWeb) syncAll().then(render).catch(() => {});
   else if (configured()) syncAll().then(render).catch(() => {});
 
   if (ENV !== 'artifact') {

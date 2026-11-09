@@ -1,0 +1,17 @@
+{
+  "name": "spin-next",
+  "version": "1.0.0",
+  "description": "1001 Albums tracker with multi-user accounts",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "resend": "^3.0.0",
+    "sql.js": "^1.12.0"
+  }
+}
